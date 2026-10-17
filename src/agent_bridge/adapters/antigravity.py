@@ -15,6 +15,10 @@ from urllib.parse import unquote
 from agent_bridge.adapters.base import STDIO_LIMIT, Adapter
 from agent_bridge.config import AgentConfig
 from agent_bridge.diagnostics import redact_diagnostic
+from agent_bridge.model_discovery_exec import (
+    parse_agy_models_output,
+    run_bounded_command,
+)
 from agent_bridge.models import Session, Task, TurnResult, agy_effort
 from agent_bridge.processes import (
     drop_pid,
@@ -242,6 +246,34 @@ class AgyAdapter(Adapter):
 
     async def ensure_session(self, session: Session) -> None:
         return None
+
+    async def list_models(self, cwd: str) -> dict[str, Any]:
+        """List models via ``agy models``; never dispatches a prompt.
+
+        The resolved configured command plus ``models`` is run read-only in
+        ``cwd``. Failures propagate so a failed refresh cannot poison the cache.
+        """
+        source = "agy models"
+        cmd = resolve_command(self.agent.command, self.agent.fallback_commands)
+        env = self._enforce_spawn_env(
+            build_worker_env(self.agent.env, config=self.env_config, worker_context=True, home=self.home)
+        )
+        returncode, stdout, stderr, warnings = await run_bounded_command([*cmd, "models"], env=env, cwd=cwd)
+        if returncode != 0:
+            detail = redact_diagnostic(stderr.strip())
+            warning = f"agy models exited with code {returncode}"
+            raise RuntimeError(warning + (f": {detail}" if detail else ""))
+        if warnings:
+            raise RuntimeError("; ".join(warnings))
+        models, default_id, parse_warnings = parse_agy_models_output(stdout)
+        if not models:
+            raise RuntimeError("; ".join(parse_warnings) or "agy models returned no recognizable catalog")
+        return {
+            "source": source,
+            "models": models,
+            "default_model": default_id,
+            "warnings": [*warnings, *parse_warnings],
+        }
 
     def _build_cmd(self, session: Session, task: Task) -> list[str]:
         cmd = resolve_command(self.agent.command, self.agent.fallback_commands)

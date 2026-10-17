@@ -446,6 +446,43 @@ uv run --no-sync python scripts/setup_lab.py
 
 If a worker is missing, `list_agents` reports `available: false` and the coordinator should pick another worker or do the work itself.
 
+### Model discovery
+
+`list_agents` includes a `model_discovery` capability block. Query a supported
+worker on demand, using this conversation's absolute project directory:
+
+```text
+list_models(agent="kimi", cwd="/absolute/project")
+list_models(agent="antigravity", cwd="/absolute/project", refresh=true)
+```
+
+Initial support: Kimi and native DSH share the ACP `initialize` / `session/new`
+discovery path; AGY uses `models`; Codex uses app-server `model/list` with
+pagination. Claude and the remaining workers are not enabled in this release.
+Discovery does not send a model prompt, configure model/effort, change active
+sessions, or register a Bridge task. ACP may create an empty session in the
+worker's own history; all discovery processes are closed after the lookup, and
+permission requests during ACP discovery are denied.
+
+Results contain `models` (`id`, `name`, `is_default`, `supported_efforts`),
+`default_model`, `source`, `fetched_at`, `cached`, and `warnings`.
+`availability="advertised"` / `invocation_verified=false` distinguish a catalog
+from a successful model request. Unknown defaults and model-specific effort
+levels remain null. Effort levels are worker-native, not necessarily accepted
+as `dispatch_task.effort` (whose vocabulary remains unchanged).
+
+```toml
+[models]
+cache_sec = 3600   # one hour; 0 disables reuse; no background polling
+timeout_sec = 30   # complete lookup deadline, including worker initialization
+```
+
+The cache is per worker and project, in memory for this Bridge instance. Use
+`refresh=true` after changing accounts, worker configuration, or model access.
+A failed refresh is explicit and does not replace the last successful cache.
+`list_agents` never launches model discovery, and worker-inherited Bridge
+instances cannot call `list_models`.
+
 The coordinator can pin a worker model and thinking intensity on `dispatch_task`:
 
 ```text

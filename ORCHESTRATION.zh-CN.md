@@ -84,3 +84,7 @@ ACP 失败保留字符串 `error`，并可附带 `failure`。`failure.prompt_may
 需要重试去重时，在首次调用 `dispatch_task` 前生成 UUID `request_id`，首次调用就传入。重试须使用同一 ID 和原始参数；首次省略了 `session_id`，重试也保持省略。只在重试时补 ID 无法对首次调用去重。相同参数复用原任务（`reused=true`），不同参数直接拒绝。去重只在同一 Bridge 实例内、原任务仍保留时有效，仍须通过正常派发校验。重启 Bridge、切换实例或清理原任务后不再保留绑定；Worker 的外部副作用不保证 exactly-once。
 
 对另一个 Bridge 实例拥有的任务，`check_task` / `get_result` 从 `state.json` 作答——带 `from_state: true`、`silent_for_sec: null`；`wait_task` / `cancel_task` 仍须由拥有它的实例调用。
+
+## 按需查询模型目录
+
+明确指定模型前，若 `list_agents.model_discovery.supported=true`，调用 `list_models(agent=..., cwd=...)` 获取 worker 公布的模型 ID。首批支持 Kimi、原生 DSH、Antigravity 和 Codex。默认缓存一小时，过期后仅在下一次查询时刷新；配置或账号变更后可用 `refresh=true`。`supported_efforts` 是 worker 原生档位，未知模型的档位保持 null，`dispatch_task.effort` 的五档输入与映射不变。目录不保证账号额度或调用成功。查询不发送模型提示、不改变活动会话；ACP 可能留下空的 worker 会话。worker 继承实例不能查询模型目录。

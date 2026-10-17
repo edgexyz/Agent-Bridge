@@ -20,6 +20,10 @@ from agent_bridge.codex_exec import (
     yolo_requested,
 )
 from agent_bridge.diagnostics import redact_diagnostic
+from agent_bridge.model_discovery_exec import (
+    codex_app_server_list_models,
+    normalize_model_list,
+)
 from agent_bridge.models import Session, Task, TurnResult
 from agent_bridge.processes import (
     drop_pid,
@@ -47,6 +51,34 @@ class CodexAdapter(Adapter):
 
     async def ensure_session(self, session: Session) -> None:
         return None
+
+    async def list_models(self, cwd: str) -> dict[str, Any]:
+        """List models via ``codex app-server`` JSON-RPC ``model/list``.
+
+        Read-only: no prompt is dispatched and no config is written. The
+        agents.toml ``config_overrides`` are passed as ``-c`` before the
+        ``app-server`` subcommand so custom providers/endpoints are reflected
+        in the listing. Failures propagate to the registry without caching.
+        """
+        source = "codex app-server model/list"
+        env = self._enforce_spawn_env(self._worker_env())
+        command = await asyncio.to_thread(
+            resolve_codex_command, self.agent.command, self.agent.fallback_commands, env=env
+        )
+        argv = [*command]
+        for item in self.agent.config_overrides:
+            argv += ["-c", item]
+        argv.append("app-server")
+        entries = await codex_app_server_list_models(argv, env=env, cwd=cwd)
+        models, default_id, warnings = normalize_model_list(entries)
+        if entries and not models:
+            raise RuntimeError("Codex model/list contained no valid model entries")
+        return {
+            "source": source,
+            "models": models,
+            "default_model": default_id,
+            "warnings": warnings,
+        }
 
     def _worker_env(self) -> dict[str, str]:
         return build_worker_env(self.agent.env, config=self.env_config, worker_context=True, home=self.home)

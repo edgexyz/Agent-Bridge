@@ -688,11 +688,187 @@ class _Live:
         self.pending_warnings: list[str] = []
 
 
+class _DiscoveryClient(_BridgeClient):
+    """Read-only handshake client, with no transcript or session bookkeeping."""
+
+    async def request_permission(
+        self,
+        session_id: str,
+        tool_call: Any,
+        options: list[Any] | None,
+        **kwargs: Any,
+    ) -> RequestPermissionResponse:
+        return RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled"))
+
+    async def session_update(self, session_id: str, update: Any, **kwargs: Any) -> None:
+        return None
+
+
+def _discovery_field(value: Any, alias: str, field: str) -> Any:
+    if isinstance(value, dict):
+        return value.get(alias, value.get(field))
+    return getattr(value, field, None)
+
+
+def _acp_model_catalog(response: Any, agent_name: str) -> dict[str, Any]:
+    """Read a fresh session snapshot without switching any of its settings.
+
+    Thought-level choices belong to the current model only. Other models'
+    support remains unknown unless a separate session snapshot advertises it.
+    """
+    config_options = _discovery_field(response, "configOptions", "config_options") or []
+    if not isinstance(config_options, (list, tuple)):
+        config_options = []
+    options = list(config_options)
+    model_option_id = next(
+        (
+            option["id"]
+            for item in options
+            if isinstance(option := _dump(item), dict)
+            and isinstance(option.get("id"), str)
+            and (option["id"] == "model" or option.get("category") == "model")
+        ),
+        "model",
+    )
+    current, _offered = config_option_values(options, model_option_id)
+    choices: dict[str, str | None] = {}
+
+    def model_id(value: str) -> str:
+        return (_dsh_native_model_label(value) or value) if agent_name == "dsh" else value
+
+    for value, name in _cursor_choices(options, model_option_id):
+        choices[model_id(value)] = name if name != value else None
+    state = _discovery_field(response, "models", "models")
+    current = current or _discovery_field(state, "currentModelId", "current_model_id")
+    default = model_id(current) if isinstance(current, str) and current else None
+    available = _discovery_field(state, "availableModels", "available_models") or []
+    if isinstance(available, (list, tuple)):
+        for entry in available:
+            value = _discovery_field(entry, "modelId", "model_id")
+            name = _discovery_field(entry, "name", "name")
+            if isinstance(value, str) and value:
+                key = model_id(value)
+                if key not in choices or choices[key] is None:
+                    choices[key] = name if isinstance(name, str) else None
+    if default is not None:
+        choices.setdefault(default, None)
+    efforts: list[str] | None = None
+    for item in options:
+        option = _dump(item)
+        if not isinstance(option, dict) or not isinstance(option.get("id"), str):
+            continue
+        option_id = option["id"]
+        if option.get("category") == "thought_level" or option_id in {
+            "thinking", "effort", "reasoning", "reasoning_effort", "thinkingEffort",
+        }:
+            _current_effort, offered = config_option_values(options, option_id)
+            # A boolean switch describes thinking enablement, not effort levels.
+            if offered and set(offered) != {"true", "false"}:
+                efforts = list(dict.fromkeys(offered))
+                break
+    warnings = [] if choices else ["The fresh ACP session did not advertise any models."]
+    return {
+        "source": "acp",
+        "models": [
+            {
+                "id": value,
+                "name": name,
+                "is_default": value == default,
+                "supported_efforts": efforts if value == default else None,
+            }
+            for value, name in choices.items()
+        ],
+        "default_model": default,
+        "warnings": warnings,
+    }
+
+
+async def _cleanup_discovery(live: _Live) -> None:
+    try:
+        if live.conn is not None:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(live.conn.close(), timeout=2)
+    finally:
+        try:
+            if live.proc is not None:
+                await reap_subprocess(live.proc)
+        finally:
+            if live.stderr_task is not None:
+                live.stderr_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await live.stderr_task
+
+
 class AcpAdapter(Adapter):
     def __init__(self, agent: AgentConfig, home: Path, env_config=None) -> None:
         super().__init__(agent, home, env_config)
         self._live: dict[str, _Live] = {}
         self._cursor_models_cache: dict[str, str] | None = None
+
+    async def list_models(self, cwd: str) -> dict[str, Any]:
+        """Discover advertised choices in a private, permission-denying process.
+
+        Do not reuse ``_spawn``: it registers a worker and may select a model,
+        effort, or bypass mode. Discovery sends initialize and session/new only.
+        The caller owns the discovery deadline; cancellation still reaps here.
+        """
+        if self.agent.name == "dsh":
+            cmd = resolve_dsh_command(self.agent.command, self.agent.fallback_commands)
+            if not command_has_native_acp(cmd):
+                return {
+                    "source": "acp",
+                    "models": [],
+                    "default_model": None,
+                    "warnings": ["Model discovery is unsupported by legacy DSH ACP; use the native ACP profile."],
+                }
+        else:
+            cmd = resolve_command(self.agent.command, self.agent.fallback_commands)
+        env = self._env()
+        if self.agent.name == "dsh":
+            cmd, env = prepare_dsh_launch(cmd, env)
+        env = self._enforce_spawn_env(env)
+        kwargs: dict[str, Any] = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        live = _Live()
+        try:
+            live.proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+                cwd=self.agent.cwd or cwd or None,
+                limit=STDIO_LIMIT,
+                **kwargs,
+            )
+            proc = live.proc
+            if proc.stdin is None or proc.stdout is None:
+                raise RuntimeError(f"{self.agent.name} did not expose stdio")
+            client = _DiscoveryClient("model-discovery", self.home, permission_policy="deny")
+            live.conn = connect_to_agent(client, proc.stdin, proc.stdout)
+            live.stderr_task = asyncio.create_task(self._drain_stderr(proc, "model-discovery", live))
+            await live.conn.initialize(
+                protocol_version=PROTOCOL_VERSION,
+                client_info=Implementation(name="agent-bridge", version="0.1.0"),
+                client_capabilities=ClientCapabilities(),
+            )
+            created = await live.conn.new_session(cwd=cwd, mcp_servers=[])
+            return _acp_model_catalog(created, self.agent.name)
+        except Exception as exc:
+            raise self._failure(
+                exc, "model_discovery", proc=live.proc, stderr=live.stderr_tail,
+            ) from None
+        finally:
+            # The outer deadline can fire during close(), after the handshake
+            # already succeeded. Keep cleanup alive and await the reap before
+            # propagating that cancellation to the registry.
+            cleanup = asyncio.create_task(_cleanup_discovery(live))
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                await cleanup
+                raise
 
     def _env(self) -> dict[str, str]:
         env = build_worker_env(self.agent.env, config=self.env_config, worker_context=True, home=self.home)
