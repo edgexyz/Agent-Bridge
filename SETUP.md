@@ -469,6 +469,12 @@ permission requests during ACP discovery are denied.
 
 Results contain `models` (`id`, `name`, `is_default`, `supported_efforts`),
 `default_model`, `source`, `fetched_at`, `cached`, and `warnings`.
+Defaults and effort options describe what the query session advertises. They do
+not predict the coordinator's later model selection. In particular, Codex
+app-server reads its existing configuration while exec intentionally ignores
+user config; discovery neither changes that behavior nor switches CODEX_HOME.
+AGY parsing supports its verified tab-separated ID/name output and rejects
+unrecognized output rather than guessing model IDs.
 `availability="advertised"` / `invocation_verified=false` distinguish a catalog
 from a successful model request. Unknown defaults and model-specific effort
 levels remain null. Effort levels are worker-native, not necessarily accepted

@@ -615,6 +615,9 @@ class Registry:
             raise ValueError("cwd must be an existing absolute project directory")
         resolved = str(path.resolve())
         key = (agent, resolved)
+        previous = self._model_cache.get(key)
+        if not refresh and previous and time.monotonic() - previous[0] < self.config.models.cache_sec:
+            return {**copy.deepcopy(previous[1]), "cached": True}
         lock = self._model_locks.setdefault(agent, asyncio.Lock())
         try:
             async with asyncio.timeout(self.config.models.timeout_sec), lock:

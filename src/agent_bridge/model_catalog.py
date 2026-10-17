@@ -18,6 +18,7 @@ class ModelInfo(BaseModel):
 class ModelCatalog(BaseModel):
     source: str = Field(min_length=1)
     models: list[ModelInfo]
+    # Default advertised by the query, not an effective dispatch selection.
     default_model: str | None = None
     warnings: list[str] = Field(default_factory=list)
 

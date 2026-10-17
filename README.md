@@ -122,6 +122,9 @@ Antigravity through `agy models`, and Codex through app-server `model/list`.
 Discovery never sends a model prompt or changes an active work session; ACP
 discovery creates a separate worker-owned session that may remain in its history.
 Catalog entries are advertised options, not guarantees of account access or quota.
+`default_model` is the query-side advertised default, not the coordinator's
+selection for a later dispatch. Codex discovery uses app-server configuration;
+exec retains its existing user-config isolation.
 `supported_efforts` contains worker-native levels only when known for that model;
 `null` means unknown. `dispatch_task.effort` still accepts only
 `off|low|medium|high|max` and applies the worker's mapping.

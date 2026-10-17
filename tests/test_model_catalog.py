@@ -117,6 +117,19 @@ async def test_deadline_includes_waiting_for_worker_lock(catalog_registry, tmp_p
     assert calls == []
 
 
+async def test_fresh_cache_does_not_wait_for_discovery_lock(catalog_registry, tmp_path):
+    registry, calls = catalog_registry
+    await registry.list_models("kimi", str(tmp_path))
+    registry.config.models.timeout_sec = 0.01
+    async with registry._model_locks["kimi"]:
+        cached = await registry.list_models("kimi", str(tmp_path))
+        assert cached["cached"]
+        cached["models"][0]["id"] = "caller mutation"
+        again = await registry.list_models("kimi", str(tmp_path))
+        assert again["models"][0]["id"] == "small"
+    assert len(calls) == 1
+
+
 async def test_list_agents_reports_capability_without_discovery(catalog_registry, monkeypatch):
     registry, calls = catalog_registry
     registry.config.quota.enabled = False

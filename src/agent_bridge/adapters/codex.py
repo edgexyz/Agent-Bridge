@@ -55,10 +55,10 @@ class CodexAdapter(Adapter):
     async def list_models(self, cwd: str) -> dict[str, Any]:
         """List models via ``codex app-server`` JSON-RPC ``model/list``.
 
-        Read-only: no prompt is dispatched and no config is written. The
-        agents.toml ``config_overrides`` are passed as ``-c`` before the
-        ``app-server`` subcommand so custom providers/endpoints are reflected
-        in the listing. Failures propagate to the registry without caching.
+        Report the app-server catalog under its own configuration and the
+        worker's config_overrides. Its advertised default is not a promise
+        about a later exec turn, which intentionally ignores user config.
+        No prompt is sent and no configuration or Home path is changed.
         """
         source = "codex app-server model/list"
         env = self._enforce_spawn_env(self._worker_env())
