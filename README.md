@@ -116,7 +116,7 @@ Close coordinators that are holding Bridge, then `agent-bridge upgrade`, then re
 | `end_session` | Shut down a worker process |
 
 Call `list_models(agent="kimi", cwd="/absolute/project")` before selecting a
-model. Initial support covers Kimi and native DSH through shared ACP discovery,
+model. Initial support covers Kimi and DSH through shared ACP discovery,
 Antigravity through `agy models`, and Codex through app-server `model/list`.
 `list_agents` reports `model_discovery` capability without querying catalogs.
 Discovery never sends a model prompt or changes an active work session; ACP

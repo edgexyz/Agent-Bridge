@@ -456,9 +456,12 @@ list_models(agent="kimi", cwd="/absolute/project")
 list_models(agent="antigravity", cwd="/absolute/project", refresh=true)
 ```
 
-Initial support: Kimi and native DSH share the ACP `initialize` / `session/new`
+Initial support: Kimi and DSH share the ACP `initialize` / `session/new`
 discovery path; AGY uses `models`; Codex uses app-server `model/list` with
 pagination. Claude and the remaining workers are not enabled in this release.
+DSH discovery attempts the same ACP handshake for native and legacy launchers;
+only a session that advertises no catalog receives an unavailable warning.
+Handshake failures remain errors rather than being reported as unsupported.
 Discovery does not send a model prompt, configure model/effort, change active
 sessions, or register a Bridge task. ACP may create an empty session in the
 worker's own history; all discovery processes are closed after the lookup, and

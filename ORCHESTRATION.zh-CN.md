@@ -87,4 +87,4 @@ ACP 失败保留字符串 `error`，并可附带 `failure`。`failure.prompt_may
 
 ## 按需查询模型目录
 
-明确指定模型前，若 `list_agents.model_discovery.supported=true`，调用 `list_models(agent=..., cwd=...)` 获取 worker 公布的模型 ID。首批支持 Kimi、原生 DSH、Antigravity 和 Codex。默认缓存一小时，过期后仅在下一次查询时刷新；配置或账号变更后可用 `refresh=true`。`supported_efforts` 是 worker 原生档位，未知模型的档位保持 null，`dispatch_task.effort` 的五档输入与映射不变。目录不保证账号额度或调用成功。查询不发送模型提示、不改变活动会话；ACP 可能留下空的 worker 会话。worker 继承实例不能查询模型目录。
+明确指定模型前，若 `list_agents.model_discovery.supported=true`，调用 `list_models(agent=..., cwd=...)` 获取 worker 公布的模型 ID。首批支持 Kimi、DSH、Antigravity 和 Codex。默认缓存一小时，过期后仅在下一次查询时刷新；配置或账号变更后可用 `refresh=true`。`supported_efforts` 是 worker 原生档位，未知模型的档位保持 null，`dispatch_task.effort` 的五档输入与映射不变。目录不保证账号额度或调用成功。查询不发送模型提示、不改变活动会话；ACP 可能留下空的 worker 会话。worker 继承实例不能查询模型目录。

@@ -766,7 +766,9 @@ def _acp_model_catalog(response: Any, agent_name: str) -> dict[str, Any]:
             if offered and set(offered) != {"true", "false"}:
                 efforts = list(dict.fromkeys(offered))
                 break
-    warnings = [] if choices else ["The fresh ACP session did not advertise any models."]
+    warnings = [] if choices else [
+        "Model discovery is unavailable: the ACP session did not advertise a model catalog."
+    ]
     return {
         "source": "acp",
         "models": [
@@ -814,13 +816,6 @@ class AcpAdapter(Adapter):
         """
         if self.agent.name == "dsh":
             cmd = resolve_dsh_command(self.agent.command, self.agent.fallback_commands)
-            if not command_has_native_acp(cmd):
-                return {
-                    "source": "acp",
-                    "models": [],
-                    "default_model": None,
-                    "warnings": ["Model discovery is unsupported by legacy DSH ACP; use the native ACP profile."],
-                }
         else:
             cmd = resolve_command(self.agent.command, self.agent.fallback_commands)
         env = self._env()

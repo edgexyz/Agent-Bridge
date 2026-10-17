@@ -299,10 +299,55 @@ async def test_native_dsh_uses_advertised_provider_model_ids(discovery, monkeypa
     ]
 
 
-async def test_legacy_dsh_returns_warning_without_starting_process(discovery):
-    adapter, _active = discovery.build("dsh", ["dsh-acp-demo"])
+@pytest.mark.parametrize("payload", [
+    {"configOptions": [{"id": "model", "currentValue": "legacy-model", "options": [
+        {"value": "legacy-model", "name": "Legacy Model"},
+    ]}]},
+    {"models": {"currentModelId": "legacy-model", "availableModels": [
+        {"modelId": "legacy-model", "name": "Legacy Model"},
+    ]}},
+])
+async def test_legacy_dsh_discovers_actual_advertised_catalog(discovery, monkeypatch, payload):
+    prepared = []
+
+    def prepare(command, env, **kwargs):
+        prepared.append(kwargs)
+        return command, env
+
+    monkeypatch.setattr(acp, "prepare_dsh_launch", prepare)
+    adapter, active = discovery.build("dsh", ["dsh-acp-demo"])
+    discovery.conn.response = payload
+    result = await adapter.list_models(".")
+    assert prepared == [{}]
+    assert result["default_model"] == "legacy-model"
+    assert result["models"] == [{
+        "id": "legacy-model", "name": "Legacy Model",
+        "is_default": True, "supported_efforts": None,
+    }]
+    assert result["warnings"] == []
+    assert [name for name, _ in discovery.conn.calls] == ["initialize", "new_session", "close"]
+    assert len(discovery.spawns) == 1
+    assert discovery.reaped == [discovery.proc]
+    assert adapter._live == {"existing-session": active}
+
+
+async def test_legacy_dsh_warns_only_after_handshake_without_catalog(discovery, monkeypatch):
+    monkeypatch.setattr(acp, "prepare_dsh_launch", lambda command, env: (command, env))
+    adapter, active = discovery.build("dsh", ["dsh-acp-demo"])
     result = await adapter.list_models(".")
     assert result["models"] == []
-    assert "legacy" in result["warnings"][0]
-    assert discovery.spawns == []
-    assert discovery.reaped == []
+    assert result["default_model"] is None
+    assert "did not advertise a model catalog" in result["warnings"][0]
+    assert [name for name, _ in discovery.conn.calls] == ["initialize", "new_session", "close"]
+    assert len(discovery.spawns) == 1
+    assert discovery.reaped == [discovery.proc]
+    assert adapter._live == {"existing-session": active}
+
+
+async def test_legacy_dsh_handshake_error_is_failure_not_unsupported(discovery, monkeypatch):
+    monkeypatch.setattr(acp, "prepare_dsh_launch", lambda command, env: (command, env))
+    adapter, _active = discovery.build("dsh", ["dsh-acp-demo"])
+    discovery.conn.fail_at = "new_session"
+    with pytest.raises(AcpError, match="new_session failed"):
+        await adapter.list_models(".")
+    assert discovery.reaped == [discovery.proc]
