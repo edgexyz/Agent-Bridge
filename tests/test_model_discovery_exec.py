@@ -14,8 +14,8 @@ from agent_bridge.adapters.codex import CodexAdapter
 from agent_bridge.config import AgentConfig, EnvConfig
 from agent_bridge.model_discovery_exec import (
     codex_app_server_list_models,
-    normalize_model_list,
     parse_agy_models_output,
+    parse_codex_models,
 )
 
 FAKE_AGY = r"""
@@ -185,7 +185,7 @@ def test_agy_unverified_formats_and_diagnostics_are_not_catalogs(text):
 
 
 def test_codex_advertised_metadata_preserves_levels_and_unknowns():
-    models, default, warnings = normalize_model_list(
+    catalog = parse_codex_models(
         [
             {
                 "id": "a",
@@ -194,14 +194,27 @@ def test_codex_advertised_metadata_preserves_levels_and_unknowns():
                 "supportedReasoningEfforts": [{"reasoningEffort": "medium"}, {"reasoningEffort": "xhigh"}],
             },
             {"id": "b", "supportedReasoningEfforts": []},
-            {"id": "c", "supportedReasoningEfforts": [{"unexpected": "high"}]},
             {"id": "d"},
         ]
     )
-    assert default == "a"
-    assert [m["supported_efforts"] for m in models] == [["medium", "xhigh"], [], None, None]
-    assert models[0]["name"] == "A"
-    assert warnings
+    assert catalog["default_model"] == "a"
+    assert [m["supported_efforts"] for m in catalog["models"]] == [["medium", "xhigh"], [], None]
+    assert catalog["models"][0]["name"] == "A"
+    assert catalog["warnings"] == []
+
+
+def test_codex_malformed_effort_metadata_fails():
+    with pytest.raises(KeyError, match="reasoningEffort"):
+        parse_codex_models([{"id": "a", "supportedReasoningEfforts": [{"unexpected": "high"}]}])
+
+
+def test_codex_preserves_advertised_rows():
+    catalog = parse_codex_models([
+        {"id": "a", "displayName": "First", "isDefault": True},
+        {"id": "a", "displayName": "Second", "isDefault": True},
+    ])
+    assert [model["name"] for model in catalog["models"]] == ["First", "Second"]
+    assert all(model["is_default"] for model in catalog["models"])
 
 
 async def test_agy_adapter_env_cwd_and_catalog(tmp_path):

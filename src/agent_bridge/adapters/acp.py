@@ -18,6 +18,7 @@ from acp.schema import (
     ClientCapabilities,
     DeniedOutcome,
     Implementation,
+    NewSessionResponse,
     PermissionOption,
     RequestPermissionResponse,
 )
@@ -704,67 +705,30 @@ class _DiscoveryClient(_BridgeClient):
         return None
 
 
-def _discovery_field(value: Any, alias: str, field: str) -> Any:
-    if isinstance(value, dict):
-        return value.get(alias, value.get(field))
-    return getattr(value, field, None)
-
-
-def _acp_model_catalog(response: Any, agent_name: str) -> dict[str, Any]:
+def _acp_model_catalog(response: NewSessionResponse, agent_name: str) -> dict[str, Any]:
     """Extract model choices and current-model effort levels from an ACP snapshot."""
-    config_options = _discovery_field(response, "configOptions", "config_options") or []
-    if not isinstance(config_options, (list, tuple)):
-        config_options = []
-    options = list(config_options)
+    options = response.config_options or []
     model_option_id = next(
-        (
-            option["id"]
-            for item in options
-            if isinstance(option := _dump(item), dict)
-            and isinstance(option.get("id"), str)
-            and (option["id"] == "model" or option.get("category") == "model")
-        ),
+        (option.id for option in options if option.id == "model" or option.category == "model"),
         "model",
     )
     current, _offered = config_option_values(options, model_option_id)
-    choices: dict[str, str | None] = {}
 
     def model_id(value: str) -> str:
         return (_dsh_native_model_label(value) or value) if agent_name == "dsh" else value
 
-    for value, name in _cursor_choices(options, model_option_id):
-        choices[model_id(value)] = name if name != value else None
-    state = _discovery_field(response, "models", "models")
-    current = current or _discovery_field(state, "currentModelId", "current_model_id")
-    default = model_id(current) if isinstance(current, str) and current else None
-    available = _discovery_field(state, "availableModels", "available_models") or []
-    if isinstance(available, (list, tuple)):
-        for entry in available:
-            value = _discovery_field(entry, "modelId", "model_id")
-            name = _discovery_field(entry, "name", "name")
-            if isinstance(value, str) and value:
-                key = model_id(value)
-                if key not in choices or choices[key] is None:
-                    choices[key] = name if isinstance(name, str) else None
-    if default is not None:
-        choices.setdefault(default, None)
+    default = model_id(current) if current else None
+    choices = [(model_id(value), name) for value, name in _cursor_choices(options, model_option_id)]
     efforts: list[str] | None = None
-    for item in options:
-        option = _dump(item)
-        if not isinstance(option, dict) or not isinstance(option.get("id"), str):
-            continue
-        option_id = option["id"]
-        if option.get("category") == "thought_level" or option_id in {
-            "thinking", "effort", "reasoning", "reasoning_effort", "thinkingEffort",
+    for option in options:
+        if option.category == "thought_level" or option.id in {
+            "thinking", "reasoning_effort",
         }:
-            _current_effort, offered = config_option_values(options, option_id)
+            _current_effort, offered = config_option_values(options, option.id)
             # A boolean switch describes thinking enablement, not effort levels.
             if offered and set(offered) != {"true", "false"}:
-                efforts = list(dict.fromkeys(offered))
+                efforts = offered
                 break
-    warnings = [] if choices else [
-        "Model discovery is unavailable: the ACP session did not advertise a model catalog."
-    ]
     return {
         "source": "acp",
         "models": [
@@ -774,10 +738,12 @@ def _acp_model_catalog(response: Any, agent_name: str) -> dict[str, Any]:
                 "is_default": value == default,
                 "supported_efforts": efforts if value == default else None,
             }
-            for value, name in choices.items()
+            for value, name in choices
         ],
         "default_model": default,
-        "warnings": warnings,
+        "warnings": [] if choices else [
+            "Model discovery is unavailable: the ACP session did not advertise a model catalog."
+        ],
     }
 
 
@@ -832,8 +798,6 @@ class AcpAdapter(Adapter):
                 **kwargs,
             )
             proc = live.proc
-            if proc.stdin is None or proc.stdout is None:
-                raise RuntimeError(f"{self.agent.name} did not expose stdio")
             client = _DiscoveryClient("model-discovery", self.home, permission_policy="deny")
             live.conn = connect_to_agent(client, proc.stdin, proc.stdout)
             live.stderr_task = asyncio.create_task(self._drain_stderr(proc, "model-discovery", live))

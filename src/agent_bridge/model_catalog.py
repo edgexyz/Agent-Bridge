@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from agent_bridge.config import AgentConfig
 
@@ -21,13 +21,6 @@ class ModelCatalog(BaseModel):
     # Default model ID advertised by the query session.
     default_model: str | None = None
     warnings: list[str] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def unique_ids(self) -> ModelCatalog:
-        ids = [model.id for model in self.models]
-        if len(ids) != len(set(ids)):
-            raise ValueError("model catalog contains duplicate IDs")
-        return self
 
 
 def model_discovery_capability(cfg: AgentConfig) -> dict:

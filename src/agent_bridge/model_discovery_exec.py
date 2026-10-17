@@ -20,53 +20,31 @@ MODEL_LIST_MAX_PAGES = 100
 _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
-def normalize_model_list(entries: Sequence[Any]) -> tuple[list[dict[str, Any]], str | None, list[str]]:
-    """Normalize the documented Codex model/list schema, preserving level order."""
+def parse_codex_models(entries: Sequence[Any]) -> dict[str, Any]:
+    """Map app-server model/list metadata to a worker catalog."""
     models = []
-    seen = set()
-    warnings = []
-    default = None
     for entry in entries:
-        if not isinstance(entry, Mapping) or not isinstance(entry.get("id"), str) or not entry["id"].strip():
-            warnings.append("Codex model/list contained a row without a model ID")
-            continue
-        ident = entry["id"]
-        if ident in seen:
-            continue
-        seen.add(ident)
         raw_efforts = entry.get("supportedReasoningEfforts")
-        efforts = None
-        if isinstance(raw_efforts, list):
-            parsed = [
-                item["reasoningEffort"]
-                for item in raw_efforts
-                if isinstance(item, Mapping)
-                and isinstance(item.get("reasoningEffort"), str)
-                and item["reasoningEffort"]
-            ]
-            efforts = parsed if parsed or not raw_efforts else None
-            if raw_efforts and not parsed:
-                warnings.append(f"Codex did not provide recognizable reasoning levels for {ident}")
-        if entry.get("isDefault") is True:
-            if default is None:
-                default = ident
-            else:
-                warnings.append("Codex reported multiple default models; keeping the first")
-        models.append(
-            {
-                "id": ident,
-                "name": entry.get("displayName") if isinstance(entry.get("displayName"), str) else None,
-                "is_default": ident == default,
-                "supported_efforts": efforts,
-            }
-        )
-    return models, default, warnings
+        models.append({
+            "id": entry["id"],
+            "name": entry.get("displayName"),
+            "is_default": entry.get("isDefault", False),
+            "supported_efforts": (
+                [item["reasoningEffort"] for item in raw_efforts]
+                if raw_efforts is not None else None
+            ),
+        })
+    return {
+        "source": "codex app-server model/list",
+        "models": models,
+        "default_model": next((model["id"] for model in models if model["is_default"]), None),
+        "warnings": [],
+    }
 
 
 def parse_agy_models_output(stdout: str) -> list[dict[str, Any]]:
     """Parse AGY tab-separated model ID and display name lines."""
     models = []
-    seen = set()
     for line in _ANSI_RE.sub("", stdout).splitlines():
         if not line.strip():
             continue
@@ -76,9 +54,6 @@ def parse_agy_models_output(stdout: str) -> list[dict[str, Any]]:
         ident, name = (field.strip() for field in fields)
         if not ident or any(char.isspace() for char in ident) or not name:
             raise RuntimeError("Unrecognized agy models output: missing or invalid ID/name")
-        if ident in seen:
-            continue
-        seen.add(ident)
         models.append({"id": ident, "name": name, "is_default": False, "supported_efforts": None})
     if not models:
         raise RuntimeError("agy models returned no model catalog")

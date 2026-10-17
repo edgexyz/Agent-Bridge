@@ -4,7 +4,12 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-from acp.schema import PermissionOption
+from acp.schema import (
+    NewSessionResponse,
+    PermissionOption,
+    SessionConfigOptionBoolean,
+    SessionConfigOptionSelect,
+)
 
 from agent_bridge.adapters import acp
 from agent_bridge.adapters.acp import AcpAdapter, AcpError, _acp_model_catalog, _Live
@@ -13,7 +18,7 @@ from agent_bridge.config import AgentConfig
 
 class FakeConn:
     def __init__(self, response=None, fail_at=None, block_at=None):
-        self.response = response or {}
+        self.response = response or NewSessionResponse(session_id="discovery")
         self.fail_at = fail_at
         self.block_at = block_at
         self.calls = []
@@ -91,31 +96,31 @@ def discovery(monkeypatch, tmp_path):
     )
 
 
-def test_grouped_options_and_standard_names_are_combined():
-    result = _acp_model_catalog(
-        {
-            "configOptions": [
-                {
-                    "id": "model", "currentValue": "model-b",
-                    "options": [{"group": "provider", "options": [
-                        {"value": "model-a", "name": "Model A"},
-                        {"value": "model-b"},
-                    ]}],
-                },
-                {
-                    "id": "thinking", "currentValue": "high",
-                    "options": [{"group": "levels", "options": [
-                        {"value": "low"}, {"value": "high"}, {"value": "high"},
-                    ]}],
-                },
-            ],
-            "models": {
-                "currentModelId": "model-b",
-                "availableModels": [{"modelId": "model-b", "name": "Model B"}],
-            },
-        },
-        "kimi",
+def select_option(option_id, current, choices, **kwargs):
+    return SessionConfigOptionSelect(
+        id=option_id, name=option_id, type="select",
+        current_value=current, options=choices, **kwargs,
     )
+
+
+def snapshot(*options):
+    return NewSessionResponse(session_id="discovery", config_options=list(options))
+
+
+def test_grouped_model_and_effort_options():
+    result = _acp_model_catalog(snapshot(
+        select_option("model", "model-b", [{
+            "group": "provider", "name": "Provider", "options": [
+                {"value": "model-a", "name": "Model A"},
+                {"value": "model-b", "name": "Model B"},
+            ],
+        }]),
+        select_option("thinking", "high", [{
+            "group": "levels", "name": "Levels", "options": [
+                {"value": "low", "name": "Low"}, {"value": "high", "name": "High"},
+            ],
+        }]),
+    ), "kimi")
     assert result == {
         "source": "acp",
         "models": [
@@ -126,53 +131,48 @@ def test_grouped_options_and_standard_names_are_combined():
     }
 
 
-def test_standard_models_metadata_and_sdk_fields():
-    class Model:
-        def model_dump(self, **kwargs):
-            return {"id": "custom-picker", "category": "model", "currentValue": "a", "options": [
-                {"value": "a", "name": "A"},
-            ]}
-
-    result = _acp_model_catalog(SimpleNamespace(
-        config_options=[Model()], models=SimpleNamespace(
-            current_model_id="a", available_models=[SimpleNamespace(model_id="b", name="B")],
-        ),
+def test_model_and_effort_categories():
+    result = _acp_model_catalog(snapshot(
+        select_option("custom-picker", "a", [{"value": "a", "name": "A"}], category="model"),
+        select_option("custom-depth", "high", [{"value": "high", "name": "High"}], category="thought_level"),
     ), "kimi")
     assert result["default_model"] == "a"
-    assert [(m["id"], m["name"], m["supported_efforts"]) for m in result["models"]] == [
-        ("a", "A", None), ("b", "B", None),
-    ]
-
-
-def test_standard_metadata_without_config_options():
-    result = _acp_model_catalog({"models": {
-        "currentModelId": "a", "availableModels": [{"modelId": "a", "name": "Alpha"}],
-    }}, "other-acp-worker")
-    assert result["default_model"] == "a"
     assert result["models"] == [
-        {"id": "a", "name": "Alpha", "is_default": True, "supported_efforts": None},
+        {"id": "a", "name": "A", "is_default": True, "supported_efforts": ["high"]},
     ]
 
 
-@pytest.mark.parametrize("payload", [{}, {"configOptions": "malformed"}, {"models": {"availableModels": "bad"}}])
-def test_unadvertised_models_are_not_invented(payload):
-    result = _acp_model_catalog(payload, "kimi")
+def test_missing_catalog_warns():
+    result = _acp_model_catalog(NewSessionResponse(session_id="discovery"), "kimi")
     assert result["models"] == []
     assert result["default_model"] is None
     assert result["warnings"]
 
 
-def test_boolean_thinking_is_not_reported_as_effort():
-    result = _acp_model_catalog({"configOptions": [
-        {"id": "model", "currentValue": "a", "options": [{"value": "a"}]},
-        {"id": "thinking", "options": [{"value": "true"}, {"value": "false"}]},
-    ]}, "kimi")
+def test_current_model_is_not_added_to_advertised_choices():
+    result = _acp_model_catalog(snapshot(
+        select_option("model", "current", [{"value": "offered", "name": "Offered"}]),
+    ), "kimi")
+    assert result["default_model"] == "current"
+    assert [model["id"] for model in result["models"]] == ["offered"]
+
+
+@pytest.mark.parametrize("thinking", [
+    SessionConfigOptionBoolean(id="thinking", name="Thinking", type="boolean", current_value=True),
+    select_option("thinking", "true", [
+        {"value": "true", "name": "On"}, {"value": "false", "name": "Off"},
+    ]),
+])
+def test_boolean_thinking_is_not_reported_as_effort(thinking):
+    result = _acp_model_catalog(snapshot(
+        select_option("model", "a", [{"value": "a", "name": "A"}]), thinking,
+    ), "kimi")
     assert result["models"][0]["supported_efforts"] is None
 
 
 async def test_private_handshake_never_prompts_configures_or_persists(discovery):
     adapter, active = discovery.build(cwd="process-directory")
-    discovery.conn.response = {"models": {"currentModelId": "a", "availableModels": [{"modelId": "a"}]}}
+    discovery.conn.response = snapshot(select_option("model", "a", [{"value": "a", "name": "A"}]))
     result = await adapter.list_models("workspace-directory")
     assert result["models"][0]["id"] == "a"
     assert [name for name, _ in discovery.conn.calls] == ["initialize", "new_session", "close"]
@@ -282,15 +282,17 @@ async def test_native_dsh_uses_advertised_provider_model_ids(discovery, monkeypa
 
     monkeypatch.setattr(acp, "prepare_dsh_launch", prepare)
     adapter, _active = discovery.build("dsh", ["dsh", "--profile", "acp"])
-    discovery.conn.response = {"configOptions": [
-        {"id": "model", "currentValue": '["openai","reasoner"]', "options": [
-            {"group": "openai", "options": [
+    discovery.conn.response = snapshot(
+        select_option("model", '["openai","reasoner"]', [{
+            "group": "openai", "name": "OpenAI", "options": [
                 {"value": '["openai","reasoner"]', "name": "Reasoner"},
                 {"value": '["openai","fast"]', "name": "Fast"},
-            ]},
-        ]},
-        {"id": "reasoning_effort", "options": [{"value": "medium"}, {"value": "high"}]},
-    ]}
+            ],
+        }]),
+        select_option("reasoning_effort", "high", [
+            {"value": "medium", "name": "Medium"}, {"value": "high", "name": "High"},
+        ]),
+    )
     result = await adapter.list_models(".")
     assert prepared == [{}]
     assert result["default_model"] == "openai/reasoner"
@@ -299,15 +301,7 @@ async def test_native_dsh_uses_advertised_provider_model_ids(discovery, monkeypa
     ]
 
 
-@pytest.mark.parametrize("payload", [
-    {"configOptions": [{"id": "model", "currentValue": "legacy-model", "options": [
-        {"value": "legacy-model", "name": "Legacy Model"},
-    ]}]},
-    {"models": {"currentModelId": "legacy-model", "availableModels": [
-        {"modelId": "legacy-model", "name": "Legacy Model"},
-    ]}},
-])
-async def test_legacy_dsh_discovers_actual_advertised_catalog(discovery, monkeypatch, payload):
+async def test_legacy_dsh_discovers_actual_advertised_catalog(discovery, monkeypatch):
     prepared = []
 
     def prepare(command, env, **kwargs):
@@ -316,7 +310,9 @@ async def test_legacy_dsh_discovers_actual_advertised_catalog(discovery, monkeyp
 
     monkeypatch.setattr(acp, "prepare_dsh_launch", prepare)
     adapter, active = discovery.build("dsh", ["dsh-acp-demo"])
-    discovery.conn.response = payload
+    discovery.conn.response = snapshot(select_option(
+        "model", "legacy-model", [{"value": "legacy-model", "name": "Legacy Model"}],
+    ))
     result = await adapter.list_models(".")
     assert prepared == [{}]
     assert result["default_model"] == "legacy-model"
