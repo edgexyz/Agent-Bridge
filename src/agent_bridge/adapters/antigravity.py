@@ -248,11 +248,7 @@ class AgyAdapter(Adapter):
         return None
 
     async def list_models(self, cwd: str) -> dict[str, Any]:
-        """List models via ``agy models``; never dispatches a prompt.
-
-        The resolved configured command plus ``models`` is run read-only in
-        ``cwd``. Failures propagate so a failed refresh cannot poison the cache.
-        """
+        """Read the catalog from ``agy models`` in the project directory."""
         source = "agy models"
         cmd = resolve_command(self.agent.command, self.agent.fallback_commands)
         env = self._enforce_spawn_env(

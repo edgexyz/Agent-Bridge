@@ -65,10 +65,8 @@ INSTRUCTIONS = (
     "dispatch_enabled is true and the user states a lasting preference, "
     "persist it with set_preferences."
     " Use list_models(agent, cwd) to discover model IDs before choosing one; "
-    "list_agents.model_discovery describes support. Catalogs are worker-advertised, "
-    "not verified successful invocations. supported_efforts uses worker-native "
-    "vocabulary; dispatch_task still accepts only off/low/medium/high/max. "
-    "Model discovery is disabled in worker-inherited instances."
+    "list_agents.model_discovery describes support. See the tool description "
+    "for result semantics and eligibility."
 )
 
 mcp = MCPServer[Registry]("agent-bridge", instructions=INSTRUCTIONS, lifespan=lifespan)
@@ -104,7 +102,7 @@ async def list_agents(ctx: Context) -> dict[str, Any]:
 
 @mcp.tool(annotations=READ_ONLY)
 async def list_models(ctx: Context, agent: str, cwd: str, refresh: bool = False) -> dict[str, Any]:
-    """Discover the selected worker's advertised models. cwd must be this conversation's absolute project directory. Supports Kimi/DSH through a short-lived ACP session, Antigravity through `agy models`, and Codex through app-server model/list. Does not prompt a model or modify active sessions. Results are cached per worker/project for one hour by default ([models] cache_sec); refresh bypasses the cache. supported_efforts contains worker-native values only for models whose levels are known; null means unknown. Defaults describe the query session, not a later dispatch selection. Catalog presence does not prove account quota or successful invocation. Discovery may initialize a worker-owned session and contact its service. Disabled inside worker-inherited Bridge instances."""
+    """List models advertised by a supported worker. Pass this conversation's absolute project directory as cwd. Results are cached per worker/project for one hour by default ([models] cache_sec); refresh=true requests an immediate update. default_model reports the query session's advertised default. supported_efforts reports worker-native levels: null means unknown, [] means explicitly no levels. For dispatch_task.effort, use off|low|medium|high|max for adapter mapping. Available when coordinator.dispatch_enabled=true."""
     try:
         return {"ok": True, **await _registry(ctx).list_models(agent, cwd, refresh=refresh)}
     except Exception as exc:

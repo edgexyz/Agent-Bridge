@@ -115,24 +115,12 @@ Close coordinators that are holding Bridge, then `agent-bridge upgrade`, then re
 | `list_sessions` | Known sessions |
 | `end_session` | Shut down a worker process |
 
-Call `list_models(agent="kimi", cwd="/absolute/project")` before selecting a
-model. Initial support covers Kimi and DSH through shared ACP discovery,
-Antigravity through `agy models`, and Codex through app-server `model/list`.
-`list_agents` reports `model_discovery` capability without querying catalogs.
-Discovery never sends a model prompt or changes an active work session; ACP
-discovery creates a separate worker-owned session that may remain in its history.
-Catalog entries are advertised options, not guarantees of account access or quota.
-`default_model` is the query-side advertised default, not the coordinator's
-selection for a later dispatch. Codex discovery uses app-server configuration;
-exec retains its existing user-config isolation.
-`supported_efforts` contains worker-native levels only when known for that model;
-`null` means unknown. `dispatch_task.effort` still accepts only
-`off|low|medium|high|max` and applies the worker's mapping.
-Catalogs are cached in memory per worker/project for one hour, refreshed only on
-the next query after expiry. `refresh=true` bypasses the cache. Configure
-`[models] cache_sec` / `timeout_sec` in `agents.toml` (defaults 3600 / 30).
-Failed refreshes return errors without overwriting the last successful cache;
-worker-inherited instances cannot launch discovery processes.
+Call `list_models(agent="kimi", cwd="/absolute/project")` to discover a worker's
+advertised models before choosing one. Supported workers are Kimi, DSH,
+Antigravity, and Codex; check `list_agents.model_discovery` for support.
+Results are cached per worker/project for one hour by default. Use
+`refresh=true` for an immediate update. See [Model discovery](SETUP.md#model-discovery)
+for result fields, configuration, and session behavior.
 
 `get_result` returns up to 60,000 characters per call. Continue with
 `next_cursor` while `has_more` is true. Detailed work events remain available

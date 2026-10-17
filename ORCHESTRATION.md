@@ -49,7 +49,7 @@ In `auto`/`eager`, tell the user after the fact. In `manual`, their explicit req
 
 ## How to dispatch
 
-Before selecting a model, use supported workers' `list_models(agent,cwd)`; see SETUP.md for caching, effort levels and session side effects.
+When `dispatch_enabled=true`, use supported workers' `list_models(agent,cwd)` before choosing a model. See SETUP.md for usage details.
 
 1. `list_agents`. Read `coordinator.mode` / `instructions` / `dispatch_enabled` and `env.proxy` / `env.warnings`. A null proxy on a direct network is normal; if a worker fails with connect errors on a proxied machine, fix `[env.proxy]` instead of retrying.
 2. `dispatch_task` with `cwd` = **this conversation's project folder** (absolute). Never the Agent Bridge install path (unless the user is editing Bridge). Never a temp dir. The `message` must be self-contained: background, absolute paths, acceptance criteria, things not to do. Leave `model`/`effort` unset unless you have a reason.

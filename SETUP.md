@@ -456,41 +456,45 @@ list_models(agent="kimi", cwd="/absolute/project")
 list_models(agent="antigravity", cwd="/absolute/project", refresh=true)
 ```
 
-Initial support: Kimi and DSH share the ACP `initialize` / `session/new`
-discovery path; AGY uses `models`; Codex uses app-server `model/list` with
-pagination. Claude and the remaining workers are not enabled in this release.
-DSH discovery attempts the same ACP handshake for native and legacy launchers;
-only a session that advertises no catalog receives an unavailable warning.
-Handshake failures remain errors rather than being reported as unsupported.
-Discovery does not send a model prompt, configure model/effort, change active
-sessions, or register a Bridge task. ACP may create an empty session in the
-worker's own history; all discovery processes are closed after the lookup, and
-permission requests during ACP discovery are denied.
+Supported workers and catalog sources:
 
-Results contain `models` (`id`, `name`, `is_default`, `supported_efforts`),
-`default_model`, `source`, `fetched_at`, `cached`, and `warnings`.
-Defaults and effort options describe what the query session advertises. They do
-not predict the coordinator's later model selection. In particular, Codex
-app-server reads its existing configuration while exec intentionally ignores
-user config; discovery neither changes that behavior nor switches CODEX_HOME.
-AGY parsing supports its verified tab-separated ID/name output and rejects
-unrecognized output rather than guessing model IDs.
-`availability="advertised"` / `invocation_verified=false` distinguish a catalog
-from a successful model request. Unknown defaults and model-specific effort
-levels remain null. Effort levels are worker-native, not necessarily accepted
-as `dispatch_task.effort` (whose vocabulary remains unchanged).
+| Worker | Source |
+| --- | --- |
+| Kimi, DSH | ACP `initialize` / `session/new` |
+| Antigravity | `agy models` |
+| Codex | app-server `model/list`, using app-server configuration and the worker's `config_overrides` |
+
+Discovery uses a separate worker process, closed after the lookup. ACP discovery
+denies permission requests and may leave an empty session in worker history.
+`list_models` is available when `coordinator.dispatch_enabled=true`.
+
+Result fields:
+
+| Field | Meaning |
+| --- | --- |
+| `models` | Advertised choices with `id`, `name`, `is_default`, and `supported_efforts` |
+| `default_model` | Default model ID reported by the query session; `null` when unknown |
+| `supported_efforts` | Worker-native effort levels for a model; `null` means unknown, `[]` means explicitly no levels |
+| `source` | Worker interface used for discovery |
+| `agent`, `cwd` | Worker name and resolved project directory |
+| `fetched_at`, `cached` | Fetch timestamp and whether this response came from cache |
+| `availability="advertised"`, `invocation_verified=false` | Results describe the worker's catalog; successful model invocation is a separate check |
+| `effort_vocabulary="worker_native"` | Effort names use the worker's vocabulary |
+| `warnings` | Discovery diagnostics |
+
+For dispatch, pass `off|low|medium|high|max` to `dispatch_task.effort`;
+the adapter maps that value to the worker's effort settings.
 
 ```toml
 [models]
-cache_sec = 3600   # one hour; 0 disables reuse; no background polling
+cache_sec = 3600   # one hour; 0 disables reuse
 timeout_sec = 30   # complete lookup deadline, including worker initialization
 ```
 
-The cache is per worker and project, in memory for this Bridge instance. Use
-`refresh=true` after changing accounts, worker configuration, or model access.
-A failed refresh is explicit and does not replace the last successful cache.
-`list_agents` never launches model discovery, and worker-inherited Bridge
-instances cannot call `list_models`.
+The cache is per worker and project, in memory for this Bridge instance.
+Expired entries are refreshed on the next query. Use `refresh=true` after
+changing accounts, worker configuration, or model access. A failed refresh
+returns an error and preserves the last successful cache entry.
 
 The coordinator can pin a worker model and thinking intensity on `dispatch_task`:
 

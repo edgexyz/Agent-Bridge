@@ -604,7 +604,7 @@ class Registry:
         return list(await asyncio.gather(*(describe(cfg) for cfg in self.config.agents.values())))
 
     async def list_models(self, agent: str, cwd: str, *, refresh: bool = False) -> dict:
-        """Query a private discovery process; never reuse or persist a work session."""
+        """Discover and cache a worker's model catalog."""
         if not self.dispatch_enabled:
             raise RuntimeError("model discovery is disabled inside worker-inherited Bridge instances")
         cfg = self.config.get(agent)
@@ -644,8 +644,6 @@ class Registry:
                 self._model_cache[key] = (time.monotonic(), copy.deepcopy(result))
                 return result
         except Exception as exc:
-            # Failed refreshes are explicit; never mask errors with stale data or
-            # expose credentials in worker diagnostics. Cleanup runs before exit.
             raise RuntimeError(redact_diagnostic(str(exc)) or type(exc).__name__) from None
 
     async def _quota_for(self, cfg: AgentConfig, *, available: bool) -> dict:

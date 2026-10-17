@@ -152,7 +152,7 @@ class ServerConfig(BaseModel):
 
 
 class ModelsConfig(BaseModel):
-    """On-demand model discovery; expiry never schedules background work."""
+    """Cache lifetime and timeout for on-demand model discovery."""
 
     cache_sec: float = Field(default=3600.0, ge=0)
     timeout_sec: float = Field(default=30.0, gt=0)

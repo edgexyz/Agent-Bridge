@@ -1,4 +1,4 @@
-"""Exercise list_models through MCP without model prompts or global Bridge state.
+"""Smoke-test list_models through an isolated MCP server.
 
     uv run python scripts/smoke_models.py --cwd /absolute/project
 

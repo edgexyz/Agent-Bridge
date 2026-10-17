@@ -254,7 +254,7 @@ command = ["codex"]
 revivable = true
 idle_unload_sec = 0
 
-# On-demand advertised model catalogs; no background polling.
+# On-demand worker model catalogs.
 [models]
 cache_sec = 3600
 timeout_sec = 30

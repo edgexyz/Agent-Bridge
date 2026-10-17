@@ -1,4 +1,4 @@
-"""Normalized worker-advertised model catalogs, not invocation guarantees."""
+"""Worker-advertised model catalog schemas."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ class ModelInfo(BaseModel):
 class ModelCatalog(BaseModel):
     source: str = Field(min_length=1)
     models: list[ModelInfo]
-    # Default advertised by the query, not an effective dispatch selection.
+    # Default model ID advertised by the query session.
     default_model: str | None = None
     warnings: list[str] = Field(default_factory=list)
 
@@ -31,7 +31,7 @@ class ModelCatalog(BaseModel):
 
 
 def model_discovery_capability(cfg: AgentConfig) -> dict:
-    """Describe support without launching a process or querying a provider."""
+    """Describe model-discovery support for a worker."""
     supported = cfg.protocol in {"agy", "codex"} or (
         cfg.protocol == "acp" and cfg.name in {"kimi", "dsh"}
     )

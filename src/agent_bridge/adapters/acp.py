@@ -689,7 +689,7 @@ class _Live:
 
 
 class _DiscoveryClient(_BridgeClient):
-    """Read-only handshake client, with no transcript or session bookkeeping."""
+    """ACP discovery client that denies permission requests and discards updates."""
 
     async def request_permission(
         self,
@@ -711,11 +711,7 @@ def _discovery_field(value: Any, alias: str, field: str) -> Any:
 
 
 def _acp_model_catalog(response: Any, agent_name: str) -> dict[str, Any]:
-    """Read a fresh session snapshot without switching any of its settings.
-
-    Thought-level choices belong to the current model only. Other models'
-    support remains unknown unless a separate session snapshot advertises it.
-    """
+    """Extract model choices and current-model effort levels from an ACP snapshot."""
     config_options = _discovery_field(response, "configOptions", "config_options") or []
     if not isinstance(config_options, (list, tuple)):
         config_options = []
@@ -808,11 +804,9 @@ class AcpAdapter(Adapter):
         self._cursor_models_cache: dict[str, str] | None = None
 
     async def list_models(self, cwd: str) -> dict[str, Any]:
-        """Discover advertised choices in a private, permission-denying process.
+        """Read a catalog through a separate ACP initialize/session-new handshake.
 
-        Do not reuse ``_spawn``: it registers a worker and may select a model,
-        effort, or bypass mode. Discovery sends initialize and session/new only.
-        The caller owns the discovery deadline; cancellation still reaps here.
+        The caller controls the deadline; this method closes the process on exit.
         """
         if self.agent.name == "dsh":
             cmd = resolve_dsh_command(self.agent.command, self.agent.fallback_commands)

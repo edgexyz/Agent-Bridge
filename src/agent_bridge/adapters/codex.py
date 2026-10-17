@@ -53,13 +53,7 @@ class CodexAdapter(Adapter):
         return None
 
     async def list_models(self, cwd: str) -> dict[str, Any]:
-        """List models via ``codex app-server`` JSON-RPC ``model/list``.
-
-        Report the app-server catalog under its own configuration and the
-        worker's config_overrides. Its advertised default is not a promise
-        about a later exec turn, which intentionally ignores user config.
-        No prompt is sent and no configuration or Home path is changed.
-        """
+        """Query app-server model/list using its configuration and config_overrides."""
         source = "codex app-server model/list"
         env = self._enforce_spawn_env(self._worker_env())
         command = await asyncio.to_thread(

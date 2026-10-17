@@ -34,7 +34,7 @@ class Adapter(ABC):
         return self.agent.revivable
 
     async def list_models(self, cwd: str) -> dict[str, Any]:
-        """Discover advertised models without prompting or changing a live session."""
+        """Return the worker's advertised model catalog."""
         raise NotImplementedError(f"model discovery is not implemented for {self.agent.name}")
 
     def _enforce_spawn_env(self, env: Mapping[str, str]) -> dict[str, str]:

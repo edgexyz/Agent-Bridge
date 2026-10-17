@@ -21,7 +21,7 @@ Claude `status`: shared `5h`/`weekly` only. Before dispatch, even if `ok`, check
 
 ## Model discovery
 
-Use `list_models(agent=..., cwd=...)` to obtain confirmed worker-advertised model IDs before explicitly selecting a model. `list_agents.model_discovery` reports whether discovery is supported; initial support is Kimi, DSH, Antigravity, and Codex. Supply this conversation's absolute project directory. Catalog presence does not prove account access or remaining quota. `supported_efforts` contains worker-native levels where known, while `dispatch_task.effort` still accepts `off|low|medium|high|max` and applies the adapter mapping. Unknown model-specific levels remain null. Catalogs are cached for one hour by default (`[models] cache_sec`); `refresh=true` forces an on-demand query. Discovery sends no prompt and does not configure an active session, but ACP may create an empty worker-owned session. Do not call `list_models` when `dispatch_enabled=false`.
+When `coordinator.dispatch_enabled=true` and `list_agents.model_discovery.supported=true`, use `list_models(agent=..., cwd=...)` to obtain worker-advertised model IDs before explicitly selecting a model. Supply this conversation's absolute project directory; use `refresh=true` after changing accounts or worker configuration. `supported_efforts` reports worker-native levels; pass `off|low|medium|high|max` to `dispatch_task.effort` for adapter mapping. See SETUP.md for result fields, caching, and session behavior.
 
 ## Step 1 — dispatch, or do it yourself?
 

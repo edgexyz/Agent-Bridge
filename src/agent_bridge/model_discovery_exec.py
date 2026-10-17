@@ -1,4 +1,4 @@
-"""Worker-specific model catalog parsing; no inference requests."""
+"""Worker model catalog discovery and parsing."""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def normalize_model_list(entries: Sequence[Any]) -> tuple[list[dict[str, Any]], 
 
 
 def parse_agy_models_output(stdout: str) -> list[dict[str, Any]]:
-    """AGY 1.4 emits tab-separated ID and display name; other formats fail."""
+    """Parse AGY tab-separated model ID and display name lines."""
     models = []
     seen = set()
     for line in _ANSI_RE.sub("", stdout).splitlines():
@@ -158,7 +158,6 @@ async def codex_app_server_list_models(argv: Sequence[str], *, env: Mapping[str,
         **kwargs,
     )
     try:
-        # Reuse the existing Codex stdio helpers rather than adding a transport.
         await _send(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"clientInfo": CLIENT_INFO}})
         await _read_response(proc, 1)
         await _send(proc, {"jsonrpc": "2.0", "method": "initialized", "params": {}})
